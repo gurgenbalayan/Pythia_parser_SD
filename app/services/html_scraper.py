@@ -1,24 +1,20 @@
 import asyncio
-import json
 import random
-import shutil
-import sqlite3
-import string
-import time
 
 from fake_useragent import UserAgent
 from bs4 import BeautifulSoup
 from selenium.webdriver import Keys, ActionChains
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium import webdriver
-import undetected_chromedriver as uc
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from utils.logger import setup_logger
 import os
-from dotenv import load_dotenv
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
+SELENIUM_REMOTE_URL = os.getenv("SELENIUM_REMOTE_URL")
+STATE = os.getenv("STATE")
+logger = setup_logger("scraper")
 
 def clean_url_and_extract_type(url: str):
     parsed = urlparse(url)
@@ -30,104 +26,6 @@ def clean_url_and_extract_type(url: str):
     cleaned_url = urlunparse(parsed._replace(query=cleaned_query))
 
     return cleaned_url, biz_type
-load_dotenv()
-
-STATE = os.getenv("STATE")
-logger = setup_logger("scraper")
-
-def get_cookie_file() -> str:
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    cookie_dir = os.path.join(script_dir,"cookies")
-    txt_files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
-    if not txt_files:
-        raise FileNotFoundError("No .txt files found in the specified folder.")
-    random_file = random.choice(txt_files)
-    return os.path.join(cookie_dir, random_file)
-
-def get_chrome_timestamp():
-    """
-    Возвращает текущее время в формате WebKit timestamp (микросекунды с 1601 года).
-    """
-    CHROME_EPOCH_DIFF = 11644473600  # Секунд между 1601 и 1970
-    now = time.time()  # Текущее время в секундах
-    return int((now + CHROME_EPOCH_DIFF) * 1_000_000)
-def load_cookies(db_path, cookies_file2, cookie_file):
-    try:
-        with open(cookie_file, "r") as f:
-            cookies = json.load(f)
-        script_dir = os.path.dirname(os.path.realpath(__file__))
-        db_path = os.path.join(script_dir, db_path)
-        db_path2 = os.path.join(script_dir, cookies_file2)
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        conn2 = sqlite3.connect(db_path2)
-        cursor2 = conn2.cursor()
-        values_list = []
-        for cookie in cookies:
-            now_chrome = get_chrome_timestamp()
-            expires_chrome = now_chrome + (30 * 24 * 60 * 60 * 1_000_000)  # +30 дней
-            # Значения для вставки
-            values = (
-                now_chrome,  # creation_utc
-                cookie["domain"],  # host_key
-                '',  # top_frame_site_key (можно оставить пустым)
-                cookie["name"],  # name
-                cookie["value"],  # value
-                b'',  # encrypted_value
-                cookie.get("path", "/"),  # path
-                expires_chrome,  # expires_utc
-                int(cookie.get("secure", False)),  # is_secure
-                int(cookie.get("httpOnly", False)),  # is_httponly
-                now_chrome,  # last_access_utc
-                1,  # has_expires
-                1,  # is_persistent
-                1,  # priority (обычно 1)
-                0,  # samesite (None = 0, Lax = 1, Strict = 2)
-                2,  # source_scheme (Unset = 0, NonSecure = 1, Secure = 2)
-                443,  # source_port (обычный HTTP порт)
-                now_chrome,  # last_update_utc
-                2,  # source_type
-                1  # has_cross_site_ancestor
-            )
-            values_list.append(values)
-            # SQL-запрос
-        sql = """
-                INSERT INTO cookies (
-                    creation_utc,
-                    host_key,
-                    top_frame_site_key,
-                    name,
-                    value,
-                    encrypted_value,
-                    path,
-                    expires_utc,
-                    is_secure,
-                    is_httponly,
-                    last_access_utc,
-                    has_expires,
-                    is_persistent,
-                    priority,
-                    samesite,
-                    source_scheme,
-                    source_port,
-                    last_update_utc,
-                    source_type,
-                    has_cross_site_ancestor
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """
-
-        cursor.executemany(sql, values_list)
-        conn.commit()
-        cursor2.executemany(sql, values_list)
-        conn2.commit()
-        conn2.close()
-        conn.close()
-        print("✅ Cookie inserted.")
-        return True
-    except Exception as e:
-        print("! Cookies not inserted")
-        print(e)
-        return False
 async def human_typing_with_mouse(driver, element, text: str, delay_range=(0.1, 0.3)):
     """Наводит мышку, кликает, потом вводит текст по-человечески."""
     try:
@@ -144,15 +42,6 @@ async def human_typing_with_mouse(driver, element, text: str, delay_range=(0.1, 
         element.send_keys(Keys.RETURN)
     except Exception as e:
         print(f"Ошибка при вводе текста: {e}")
-async def generate_random_user_agent():
-    browsers = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/89.0',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/91.0.864.48',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/89.0',
-    ]
-    return random.choice(browsers)
 async def fetch_company_details(url: str) -> dict:
     driver = None
     referer_url = "https://sosenterprise.sd.gov/BusinessServices/Business/FilingSearch.aspx"
@@ -172,7 +61,10 @@ async def fetch_company_details(url: str) -> dict:
         options.add_argument("--disable-features=DnsOverHttps")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        driver = uc.Chrome(options=options)
+        driver = webdriver.Remote(
+            command_executor=SELENIUM_REMOTE_URL,
+            options=options
+        )
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
                         const getContext = HTMLCanvasElement.prototype.getContext;
@@ -218,27 +110,14 @@ def is_nothing_found_selenium(driver) -> bool:
         return False
 async def fetch_company_data(query: str) -> list[dict]:
     driver = None
-    driver2 = None
     try:
         ua = UserAgent()
         user_agent = ua.random
         url = "https://sosenterprise.sd.gov/BusinessServices/Business/FilingSearch.aspx"
         options = webdriver.ChromeOptions()
-        options2 = webdriver.ChromeOptions()
-        script_dir = os.path.dirname(os.path.realpath(__file__))
-        profile = os.path.join(script_dir, "profile")
-        if not os.path.exists(profile):
-            os.makedirs(profile)
-        else:
-            shutil.rmtree(profile)
-        word = ''.join(random.choices(string.ascii_letters, k=10))
-        profile_path = os.path.join(profile, word)
-        options.add_argument(f"--user-data-dir={profile_path}")
-        options2.add_argument(f"--user-data-dir={profile_path}")
         options.add_argument(f'--user-agent={user_agent}')
         options.add_argument(f'--lang=en-US')
         options.add_argument("--headless=new")
-        options2.add_argument("--headless=new")
         options.add_argument("--start-maximized")
         options.add_argument("--disable-webrtc")
         options.add_argument("--disable-features=WebRtcHideLocalIpsWithMdns")
@@ -248,17 +127,10 @@ async def fetch_company_data(query: str) -> list[dict]:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.page_load_strategy = 'eager'
-        driver2 = uc.Chrome(options=options2)
-        driver2.quit()
-        driver2 = None
-        cookies_file2 = os.path.join(profile_path, "Default", "Safe Browsing Cookies")
-        cookies_file = os.path.join(profile_path, "Default", "Cookies")
-        cookie_file = get_cookie_file()
-        res_load = load_cookies(cookies_file, cookies_file2, cookie_file)
-        if not res_load:
-            print("Cookies failed to load!")
-            return None, "", ""
-        driver = uc.Chrome(options=options)
+        driver = webdriver.Remote(
+            command_executor=SELENIUM_REMOTE_URL,
+            options=options
+        )
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
                         const getContext = HTMLCanvasElement.prototype.getContext;
@@ -299,8 +171,6 @@ async def fetch_company_data(query: str) -> list[dict]:
         logger.error(f"Error fetching data for query '{query}': {e}")
         return []
     finally:
-        if driver2:
-            driver.quit()
         if driver:
             driver.quit()
 
