@@ -98,7 +98,7 @@ async def fetch_company_details(url: str) -> dict:
         return await parse_html_details(html, biz_type)
     except Exception as e:
         logger.error(f"Error fetching data for url '{url}': {e}")
-        return []
+        return {}
     finally:
         if driver:
             driver.quit()
