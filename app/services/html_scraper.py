@@ -71,6 +71,7 @@ async def fetch_company_details(url: str) -> dict:
             command_executor=SELENIUM_REMOTE_URL,
             options=options
         )
+        driver.set_page_load_timeout(30)
         driver.get(referer_url)
         cleaned_url, biz_type = clean_url_and_extract_type(url)
         driver.execute_script(f"window.location.href='{cleaned_url}';")
@@ -122,6 +123,7 @@ async def fetch_company_data(query: str) -> list[dict]:
             command_executor=SELENIUM_REMOTE_URL,
             options=options
         )
+        driver.set_page_load_timeout(30)
         driver.get(url)
         input_field = WebDriverWait(driver, 15).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "#ctl00_MainContent_txtSearchValue")))
